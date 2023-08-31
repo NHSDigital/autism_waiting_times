@@ -1,0 +1,545 @@
+-- Databricks notebook source
+-- MAGIC %python
+-- MAGIC import os
+-- MAGIC 
+-- MAGIC # import functions
+-- MAGIC from datetime import datetime, date
+-- MAGIC from dateutil.relativedelta import relativedelta
+-- MAGIC from dsp.common.exports import create_csv_for_download
+-- MAGIC 
+-- MAGIC from dsp.code_promotion.mesh_send import cp_mesh_send
+-- MAGIC 
+-- MAGIC # dbutils.widgets.removeAll()
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Create widgets
+-- MAGIC %python
+-- MAGIC 
+-- MAGIC db_output = dbutils.widgets.get("db_output")
+-- MAGIC rp_startdate = dbutils.widgets.get("rp_startdate")
+-- MAGIC rp_enddate = dbutils.widgets.get("rp_enddate")
+-- MAGIC status = dbutils.widgets.get("status")
+-- MAGIC db_source = dbutils.widgets.get("db_source") 
+-- MAGIC month_id = dbutils.widgets.get("month_id")
+-- MAGIC new_metrics = dbutils.widgets.get("new_metrics")
+-- MAGIC 
+-- MAGIC 
+-- MAGIC 
+-- MAGIC print(f'db_output is {db_output}; \
+-- MAGIC       rp_startdate is {rp_startdate}; \
+-- MAGIC       rp_enddate is {rp_enddate}; \
+-- MAGIC       status is {status}; \
+-- MAGIC       db_source is {db_source}; \
+-- MAGIC       month_id is {month_id}')
+-- MAGIC 
+-- MAGIC 
+-- MAGIC # if status == 'Final':
+-- MAGIC #   shortstatus = status
+-- MAGIC # else:
+-- MAGIC #   shortstatus = status[:4]
+-- MAGIC 
+-- MAGIC if new_metrics:
+-- MAGIC   startdate = datetime.strptime(rp_startdate, '%Y-%m-%d')
+-- MAGIC else:
+-- MAGIC   startdate = datetime.strptime(rp_enddate, '%Y-%m-%d')+relativedelta(years=-1, days=+1)
+-- MAGIC   
+-- MAGIC StartYYYY = startdate.strftime("%Y")
+-- MAGIC StartMname = startdate.strftime("%b")
+-- MAGIC   
+-- MAGIC EndYYYY = rp_enddate[:4]
+-- MAGIC EndMname = datetime.strptime(rp_enddate, '%Y-%m-%d').strftime("%b")
+-- MAGIC 
+-- MAGIC file_part_name = f"_{StartMname}{StartYYYY}_{EndMname}{EndYYYY}" # without csv extension
+-- MAGIC 
+-- MAGIC if db_source == "menh_point_in_time":
+-- MAGIC   file_part_name = f"_pit_{file_part_name}"
+-- MAGIC 
+-- MAGIC   print(f'Second part of file name: {file_part_name}')
+-- MAGIC 
+-- MAGIC #Prod mail box id
+-- MAGIC mailbox_to = 'X26HC004'                 ##THIS IS THE STANDARD MAILBOX - USED FOR ALL PROJECTS
+-- MAGIC workflow_id = 'GNASH_MHSDS'             ##THIS DEFINES THE DATA AS MHSDS DATA AND CONTROLS WHICH FOLDER THE OUTPUT GETS MOVED TO
+
+-- COMMAND ----------
+
+-- COMMAND ----------
+
+-- DBTITLE 1,Reports for Main and DQ outputs
+-- MAGIC %python
+-- MAGIC 
+-- MAGIC print(f'Second part of file name: {file_part_name}')
+-- MAGIC 
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics raw - England
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_raw_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output_raw
+-- MAGIC                                   WHERE BREAKDOWN NOT LIKE ('%Provider%%')
+-- MAGIC                                     AND BREAKDOWN NOT LIKE ('%CCG%%')
+-- MAGIC                                     AND BREAKDOWN NOT LIKE ('%STP%%')
+-- MAGIC                                     AND BREAKDOWN NOT LIKE ('%Region%%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_raw_csv = f'AutismStats{file_part_name}_England_RAW.csv' 
+-- MAGIC   local_id = asd_main_raw_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_raw_csv, mailbox_to, workflow_id, asd_main_raw_csv, local_id)
+-- MAGIC     print(f"{asd_main_raw_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_raw_csv)
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics raw - Provider
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_provider_raw_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output_raw
+-- MAGIC                                   WHERE BREAKDOWN LIKE ('%Provider%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_provider_raw_csv = f'AutismStats{file_part_name}_Provider_RAW.csv' 
+-- MAGIC   local_id = asd_main_provider_raw_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_provider_raw_csv, mailbox_to, workflow_id, asd_main_provider_raw_csv, local_id)
+-- MAGIC     print(f"{asd_main_provider_raw_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_provider_raw_csv) 
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics raw - CCG
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_ccg_raw_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output_raw
+-- MAGIC                                   WHERE BREAKDOWN LIKE ('%CCG%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_ccg_raw_csv = f'AutismStats{file_part_name}_SubICB_RAW.csv' 
+-- MAGIC   local_id = asd_main_ccg_raw_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_ccg_raw_csv, mailbox_to, workflow_id, asd_main_ccg_raw_csv, local_id)
+-- MAGIC     print(f"{asd_main_ccg_raw_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_ccg_raw_csv) 
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics raw - STP
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_stp_raw_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output_raw
+-- MAGIC                                   WHERE BREAKDOWN LIKE ('%STP%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_stp_raw_csv = f'AutismStats{file_part_name}_ICB_RAW.csv' 
+-- MAGIC   local_id = asd_main_stp_raw_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_stp_raw_csv, mailbox_to, workflow_id, asd_main_stp_raw_csv, local_id)
+-- MAGIC     print(f"{asd_main_stp_raw_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_stp_raw_csv) 
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics raw - Region
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_region_raw_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output_raw
+-- MAGIC                                   WHERE BREAKDOWN LIKE ('%Region%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_region_raw_csv = f'AutismStats{file_part_name}_Region_RAW.csv' 
+-- MAGIC   local_id = asd_main_region_raw_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_region_raw_csv, mailbox_to, workflow_id, asd_main_region_raw_csv, local_id)
+-- MAGIC     print(f"{asd_main_region_raw_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_region_raw_csv) 
+-- MAGIC 
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of dq metrics raw
+-- MAGIC ##############################################################
+-- MAGIC df_asd_dq_raw_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_dq_output_raw
+-- MAGIC                                   WHERE REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_dq_raw_csv = f'AutismStatsDQ{file_part_name}_RAW.csv' 
+-- MAGIC   local_id = asd_dq_raw_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_dq_raw_csv, mailbox_to, workflow_id, asd_dq_raw_csv, local_id)
+-- MAGIC     print(f"{asd_dq_raw_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_dq_raw_csv)
+-- MAGIC 
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics - England
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output
+-- MAGIC                                   WHERE BREAKDOWN NOT LIKE ('%Provider%%')
+-- MAGIC                                     AND BREAKDOWN NOT LIKE ('%CCG%%')
+-- MAGIC                                     AND BREAKDOWN NOT LIKE ('%STP%%')
+-- MAGIC                                     AND BREAKDOWN NOT LIKE ('%Region%%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_csv = f'AutismStats{file_part_name}_England.csv' 
+-- MAGIC   local_id = asd_main_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_csv, mailbox_to, workflow_id, asd_main_csv, local_id)
+-- MAGIC     print(f"{asd_main_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_csv)
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics - Provider
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_provider_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output
+-- MAGIC                                   WHERE BREAKDOWN LIKE ('%Provider%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_provider_csv = f'AutismStats{file_part_name}_Provider.csv' 
+-- MAGIC   local_id = asd_main_provider_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_provider_csv, mailbox_to, workflow_id, asd_main_provider_csv, local_id)
+-- MAGIC     print(f"{asd_main_provider_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_provider_csv) 
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics - CCG
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_ccg_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output
+-- MAGIC                                   WHERE BREAKDOWN LIKE ('%CCG%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_ccg_csv = f'AutismStats{file_part_name}_SubICB.csv' 
+-- MAGIC   local_id = asd_main_ccg_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_ccg_csv, mailbox_to, workflow_id, asd_main_ccg_csv, local_id)
+-- MAGIC     print(f"{asd_main_ccg_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_ccg_csv) 
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics - STP
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_stp_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output
+-- MAGIC                                   WHERE BREAKDOWN LIKE ('%STP%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_stp_csv = f'AutismStats{file_part_name}_ICB.csv' 
+-- MAGIC   local_id = asd_main_stp_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_stp_csv, mailbox_to, workflow_id, asd_main_stp_csv, local_id)
+-- MAGIC     print(f"{asd_main_stp_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_stp_csv) 
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of main metrics - Region
+-- MAGIC ##############################################################
+-- MAGIC df_asd_main_region_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_main_output
+-- MAGIC                                   WHERE BREAKDOWN LIKE ('%Region%')
+-- MAGIC                                     AND REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_main_region_csv = f'AutismStats{file_part_name}_Region.csv' 
+-- MAGIC   local_id = asd_main_region_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_main_region_csv, mailbox_to, workflow_id, asd_main_region_csv, local_id)
+-- MAGIC     print(f"{asd_main_region_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_main_region_csv) 
+-- MAGIC 
+-- MAGIC   
+-- MAGIC ##############################################################
+-- MAGIC #              Extract the CSV of dq metrics
+-- MAGIC ##############################################################
+-- MAGIC df_asd_dq_csv = spark.sql("""SELECT DISTINCT
+-- MAGIC                                        REPORTING_PERIOD_START 
+-- MAGIC                                       ,REPORTING_PERIOD_END
+-- MAGIC                                       ,STATUS
+-- MAGIC                                       ,BREAKDOWN
+-- MAGIC                                       ,PRIMARY_LEVEL
+-- MAGIC                                       ,PRIMARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,SECONDARY_LEVEL
+-- MAGIC                                       ,SECONDARY_LEVEL_DESCRIPTION
+-- MAGIC                                       ,METRIC
+-- MAGIC                                       ,METRIC_NAME
+-- MAGIC                                       ,METRIC_VALUE   
+-- MAGIC                                   FROM {db_output}.asd_dq_output
+-- MAGIC                                   WHERE REPORTING_PERIOD_END BETWEEN '{rp_startdate}' AND '{rp_enddate}'
+-- MAGIC                                                                                               
+-- MAGIC                               ORDER BY REPORTING_PERIOD_START, REPORTING_PERIOD_END, STATUS, BREAKDOWN, PRIMARY_LEVEL, SECONDARY_LEVEL, METRIC""".format(db_output = db_output,
+-- MAGIC                                                                                                                                                           rp_startdate = rp_startdate,
+-- MAGIC                                                                                                                                                           rp_enddate = rp_enddate
+-- MAGIC                                                
+-- MAGIC                                                                                                                                                           ))
+-- MAGIC 
+-- MAGIC #to help with local testing and avoiding the commenting and uncommenting the code
+-- MAGIC 
+-- MAGIC if(os.environ.get('env') == 'prod'):
+-- MAGIC   asd_dq_csv = f'AutismStatsDQ{file_part_name}.csv' 
+-- MAGIC   local_id = asd_dq_csv #use filename here for new LEAD_MESH process
+-- MAGIC 
+-- MAGIC   try:
+-- MAGIC     request_id = cp_mesh_send(spark, df_asd_dq_csv, mailbox_to, workflow_id, asd_dq_csv, local_id)
+-- MAGIC     print(f"{asd_dq_csv} file has been pushed to MESH with request id {request_id}. \n")
+-- MAGIC   except Exception as ex:
+-- MAGIC     print(ex, 'MESH exception on SPARK 3 can be ignored, file will be delivered in the destined path') 
+-- MAGIC else:
+-- MAGIC   display(df_asd_dq_csv)
