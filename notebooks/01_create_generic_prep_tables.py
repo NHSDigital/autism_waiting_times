@@ -531,7 +531,7 @@ rp_startdate = dbutils.widgets.get("rp_startdate")
 # MAGIC   AND C.UniqServReqID = r.UniqServReqID
 # MAGIC LEFT JOIN $db_output.validcodes as vc
 # MAGIC --     join updated to evaluate validity at time of data rather than reporting month
-# MAGIC   ON vc.datatable = 'mhs201carecontact' and vc.field = 'AttendORDNACode' and vc.Measure = 'ASD' and vc.type = 'include' and C.AttendORDNACode = vc.ValidValue
+# MAGIC   ON vc.datatable = 'mhs201carecontact' and vc.field = 'AttendORDNACode' and vc.Measure = 'ASD' and vc.type = 'include' and C.AttendStatus = vc.ValidValue
 # MAGIC   and C.UniqMonthID >= vc.FirstMonth and (vc.LastMonth is null or C.UniqMonthID <= vc.LastMonth)
 # MAGIC LEFT JOIN $db_output.validcodes as vc2
 # MAGIC --     join updated to evaluate validity at time of data rather than reporting month
@@ -540,7 +540,7 @@ rp_startdate = dbutils.widgets.get("rp_startdate")
 # MAGIC WHERE r.ReferralRequestReceivedDate <= C.CareContDate
 # MAGIC   AND vc.Measure is not null
 # MAGIC   AND vc2.Measure is not null
-# MAGIC --   AND C.AttendORDNACode in (5,6)
+# MAGIC --   AND C.AttendStatus in (5,6)
 # MAGIC --   AND ((r.UniqMonthID <= 1458 AND C.ConsMechanismMH in ('01','03'))
 # MAGIC --         OR (r.UniqMonthID > 1458 AND C.ConsMechanismMH in ('01','11')))
 # MAGIC ) r
