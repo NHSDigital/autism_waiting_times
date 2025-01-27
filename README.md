@@ -51,7 +51,7 @@ If you have any questions or issues regarding the constructions or code within t
 
 ## Authors and acknowledgment
 Community and Mental Health Team, NHS England
-mh.analysis@nhs.net
+england.mentalhealthanalysis@nhs.net
 
 ## License
 The autism_waiting_times codebase is released under the MIT License. The documentation is © Crown copyright and available under the terms of the [Open Government 3.0] (https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/) licence.
